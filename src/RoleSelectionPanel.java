@@ -21,7 +21,7 @@ public class RoleSelectionPanel extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(25, 15, 25, 15));
 
         // Title with modern styling
-        JLabel titleLabel = new JLabel("📋 CHỌN VỊ TRÍ");
+        JLabel titleLabel = new JLabel("Lựa chọn vai trò");
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
         titleLabel.setForeground(new Color(57, 73, 171));
         titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -29,7 +29,7 @@ public class RoleSelectionPanel extends JPanel {
         add(Box.createVerticalStrut(35));
 
         // Employee Button - Modern styling
-        employeeBtn = new JButton("👤 NHÂN VIÊN");
+        employeeBtn = new JButton("NHÂN VIÊN");
         employeeBtn.setFont(new Font("Segoe UI", Font.BOLD, 13));
         employeeBtn.setMaximumSize(new Dimension(210, 55));
         employeeBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -47,7 +47,7 @@ public class RoleSelectionPanel extends JPanel {
         add(Box.createVerticalStrut(25));
 
         // Admin Button - Modern styling
-        adminBtn = new JButton("🔐 ADMIN");
+        adminBtn = new JButton("ADMIN");
         adminBtn.setFont(new Font("Segoe UI", Font.BOLD, 13));
         adminBtn.setMaximumSize(new Dimension(210, 55));
         adminBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -59,7 +59,33 @@ public class RoleSelectionPanel extends JPanel {
         adminBtn.addActionListener(e -> {
             adminBtn.setBackground(new Color(130, 20, 150));
             employeeBtn.setBackground(new Color(76, 175, 80));
-            if (listener != null) listener.onRoleSelected("ADMIN");
+            // Prompt for admin password before allowing access
+            JPasswordField pwdField = new JPasswordField(12);
+            JPanel panel = new JPanel(new GridLayout(2, 1, 5, 5));
+            panel.add(new JLabel("Nhập mật khẩu Admin:"));
+            panel.add(pwdField);
+            int option = JOptionPane.showConfirmDialog(
+                this,
+                panel,
+                "Xác Thực Admin",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.WARNING_MESSAGE
+            );
+            if (option == JOptionPane.OK_OPTION) {
+                String pwd = new String(pwdField.getPassword());
+                if ("admin123@".equals(pwd)) {
+                    if (listener != null) listener.onRoleSelected("ADMIN");
+                } else {
+                    JOptionPane.showMessageDialog(
+                        this,
+                        "❌ Mật khẩu Admin không đúng!",
+                        "Từ Chối",
+                        JOptionPane.ERROR_MESSAGE
+                    );
+                    // Keep current role as employee
+                    if (listener != null) listener.onRoleSelected("EMPLOYEE");
+                }
+            }
         });
         add(adminBtn);
 

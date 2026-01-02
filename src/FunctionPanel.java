@@ -111,11 +111,11 @@ public class FunctionPanel extends JPanel {
         deleteBtn.addActionListener(e -> deleteCard());
         controlPanel.add(deleteBtn);
         
-        JButton unlockBtn = createModernButton("🔓 Mở Khóa", new Color(255, 193, 7));
+        JButton unlockBtn = createModernButton("Mở Khóa", new Color(255, 193, 7));
         unlockBtn.addActionListener(e -> unlockCard());
         controlPanel.add(unlockBtn);
         
-        JButton resetPinBtn = createModernButton("🔐 Reset PIN", new Color(156, 39, 176));
+        JButton resetPinBtn = createModernButton("Reset PIN", new Color(156, 39, 176));
         resetPinBtn.addActionListener(e -> resetPin());
         controlPanel.add(resetPinBtn);
         
@@ -185,10 +185,10 @@ public class FunctionPanel extends JPanel {
                 
                 // Admin info
                 if (currentRole.equals("ADMIN")) {
-                    logArea.append("\n⚙️ ADMIN INFO:\n");
-                    logArea.append("🔢 PIN Retry: " + currentCard.pinRetry + "/5\n");
-                    String status = currentCard.pinRetry == 0 ? "🔒 LOCKED" : "✅ ACTIVE";
-                    logArea.append("📊 Status: " + status + "\n");
+                    logArea.append("\nADMIN INFO:\n");
+                    logArea.append("PIN Retry: " + currentCard.pinRetry + "/5\n");
+                    String status = currentCard.pinRetry == 0 ? "LOCKED" : "ACTIVE";
+                    logArea.append("Status: " + status + "\n");
                 }
 
             } catch (Exception ex) {
@@ -353,6 +353,14 @@ public class FunctionPanel extends JPanel {
             logArea.append("PIN: " + pinStr + "\n");
             logArea.append("════════════════════════════\n");
             
+            // Push to Firebase (auto-sync)
+            try {
+                FirebaseClient firebase = new FirebaseClient();
+                firebase.pushCardData(newCard);
+            } catch (Exception fbEx) {
+                // Silent fail
+            }
+            
             JOptionPane.showMessageDialog(this, 
                 "✅ Tạo thẻ thành công!\n\n" +
                 "Họ Tên: " + newCard.fullName + "\n" +
@@ -492,7 +500,7 @@ public class FunctionPanel extends JPanel {
         int result = JOptionPane.showConfirmDialog(
             this,
             message,
-            "💳 Xác Nhận Nạp Tiền",
+            "Xác Nhận Nạp Tiền",
             JOptionPane.YES_NO_OPTION,
             JOptionPane.QUESTION_MESSAGE
         );
@@ -544,7 +552,7 @@ public class FunctionPanel extends JPanel {
             int confirm = JOptionPane.showConfirmDialog(
                 this,
                 confirmMsg,
-                "⚠️ Xác Nhận Xóa",
+                "Xác Nhận Xóa",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE
             );
@@ -559,7 +567,7 @@ public class FunctionPanel extends JPanel {
             emptyCard.userId = 0;
             emptyCard.balance = 0;
             emptyCard.expiryDays = 0;
-            emptyCard.pin = "000000"; // Default PIN for blank card
+            emptyCard.pin = "000000"; 
             emptyCard.pinRetry = 5;
             emptyCard.fullName = "";
             emptyCard.dobDay = 0;
@@ -574,6 +582,19 @@ public class FunctionPanel extends JPanel {
                 logArea.append(" Họ Tên: " + (card.fullName != null ? card.fullName : "N/A") + "\n");
                 logArea.append(" ID: " + card.userId + "\n");
                 logArea.append("Thẻ đã được reset về mặc định\n");
+
+                // Also delete from Firebase server
+                try {
+                    FirebaseClient firebase = new FirebaseClient();
+                    boolean deleted = firebase.deleteCardData(card.userId);
+                    if (deleted) {
+                        logArea.append("[FIREBASE] ✅ Đã xóa record trên server\n");
+                    } else {
+                        logArea.append("[FIREBASE] ⚠️ Không xóa được record trên server\n");
+                    }
+                } catch (Exception fbEx) {
+                    logArea.append("[FIREBASE] ⚠️ Lỗi khi xóa trên server: " + fbEx.getMessage() + "\n");
+                }
                 JOptionPane.showMessageDialog(this, 
                     "Xóa thẻ thành công!\nThẻ đã được reset.",
                     "Thành Công",
@@ -593,7 +614,7 @@ public class FunctionPanel extends JPanel {
      */
     private void unlockCard() {
         if (currentCard == null || currentCard.userId == 0) {
-            JOptionPane.showMessageDialog(this, "❌ Vui lòng quẹt thẻ trước!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Vui lòng quẹt thẻ trước!", "Lỗi", JOptionPane.ERROR_MESSAGE);
             return;
         }
         
@@ -601,25 +622,22 @@ public class FunctionPanel extends JPanel {
         logArea.append("[ADMIN] Mở khóa thẻ #" + currentCard.userId + "\n\n");
         
         if (currentCard.pinRetry >= 5) {
-            JOptionPane.showMessageDialog(this, "ℹ️ Thẻ chưa bị khóa (Retry: " + currentCard.pinRetry + "/5)", 
+            JOptionPane.showMessageDialog(this, "Thẻ chưa bị khóa (Retry: " + currentCard.pinRetry + "/5)", 
                 "Thông Báo", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
         
-        // Ask for user's PIN (to verify before unlocking)
-        String userPin = JOptionPane.showInputDialog(this,
-            "⚠️ Cần PIN của user để xác thực\n\n" +
-            "Nhập PIN của thẻ (6 chữ số):",
-            "🔐 Xác Thực PIN",
+        int confirm = JOptionPane.showConfirmDialog(this,
+            "Mở khóa thẻ cho: " + currentCard.fullName + "\n\n" +
+            "Retry hiện tại: " + currentCard.pinRetry + "/5\n" +
+            "Sẽ reset về: 5/5\n\n" +
+            "Xác nhận mở khóa?",
+            "Xác Nhận Mở Khóa",
+            JOptionPane.YES_NO_OPTION,
             JOptionPane.QUESTION_MESSAGE);
-        
-        if (userPin == null) {
+            
+        if (confirm != JOptionPane.YES_OPTION) {
             logArea.append("[HỦY] Không mở khóa\n");
-            return;
-        }
-        
-        if (!userPin.matches("\\d{6}")) {
-            JOptionPane.showMessageDialog(this, "❌ PIN phải là 6 chữ số!", "Lỗi", JOptionPane.ERROR_MESSAGE);
             return;
         }
         
@@ -635,35 +653,12 @@ public class FunctionPanel extends JPanel {
                 return;
             }
             
-            // VERIFY PIN first to authenticate
-            logArea.append("[BƯỚC 1] Xác thực PIN...\n");
-            javax.smartcardio.CommandAPDU verifyCmd = CardHelper.buildVerifyPinCommand(userPin);
-            javax.smartcardio.ResponseAPDU verifyResp = pcsc.transmit(verifyCmd);
+            // Use admin unlock command (no PIN required)
+            logArea.append("[BƯỚC 1] Gửi lệnh admin unlock...\n");
+            javax.smartcardio.CommandAPDU unlockCmd = CardHelper.buildAdminUnlockCommand();
+            javax.smartcardio.ResponseAPDU unlockResp = pcsc.transmit(unlockCmd);
             
-            if ((verifyResp.getSW() & 0xFF00) != 0x9000) {
-                int retriesLeft = verifyResp.getSW() & 0x000F;
-                logArea.append("[LỖI] PIN không đúng! Còn " + retriesLeft + " lần thử\n");
-                JOptionPane.showMessageDialog(this, 
-                    "❌ PIN không đúng!\n\nCòn " + retriesLeft + " lần thử",
-                    "Lỗi",
-                    JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            
-            logArea.append("[OK] PIN đúng, đã xác thực!\n");
-            
-            // Now read and parse card data (will get decrypted data from VERIFY_PIN response)
-            CardData card = CardHelper.parseVerifyPinResponse(verifyResp, userPin);
-            
-            // Reset retry counter
-            card.pinRetry = 5;
-            
-            // Write back (now pinVerified = true, so write will succeed)
-            logArea.append("[BƯỚC 2] Reset retry counter...\n");
-            javax.smartcardio.CommandAPDU writeCmd = CardHelper.buildWriteCommand(card);
-            javax.smartcardio.ResponseAPDU writeResp = pcsc.transmit(writeCmd);
-            
-            if ((writeResp.getSW() & 0xFF00) == 0x9000) {
+            if ((unlockResp.getSW() & 0xFF00) == 0x9000) {
                 logArea.append("[✅ THÀNH CÔNG] Đã mở khóa thẻ!\n");
                 logArea.append("Retry counter: 5/5\n");
                 
@@ -676,12 +671,11 @@ public class FunctionPanel extends JPanel {
                 currentCard.pinRetry = 5;
             } else {
                 logArea.append("[LỖI] Mở khóa thất bại (SW: " + 
-                             Integer.toHexString(writeResp.getSW()).toUpperCase() + ")\n");
+                             Integer.toHexString(unlockResp.getSW()).toUpperCase() + ")\n");
             }
             
         } catch (Exception ex) {
             logArea.append("[LỖI] " + ex.getMessage() + "\n");
-            ex.printStackTrace();
         }
     }
     
@@ -697,29 +691,12 @@ public class FunctionPanel extends JPanel {
         logArea.setText("");
         logArea.append("[ADMIN] Reset PIN cho thẻ #" + currentCard.userId + "\n\n");
         
-        // Ask for OLD PIN first (needed to decrypt balance/expiry)
-        String oldPin = JOptionPane.showInputDialog(this, 
-            "⚠️ Cần PIN cũ để decrypt balance/expiry\n\n" +
-            "Nhập PIN cũ (6 chữ số):",
-            "🔐 PIN Cũ",
-            JOptionPane.QUESTION_MESSAGE);
-        
-        if (oldPin == null) {
-            logArea.append("[HỦY] Không reset PIN\n");
-            return;
-        }
-        
-        if (!oldPin.matches("\\d{6}")) {
-            JOptionPane.showMessageDialog(this, "❌ PIN phải là 6 chữ số!", "Lỗi", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-        
-        // Ask for NEW PIN
         String newPin = JOptionPane.showInputDialog(this, 
+            "Admin Reset PIN\n" +
             "Reset PIN cho: " + currentCard.fullName + "\n\n" +
             "Nhập PIN mới (6 chữ số):",
             "🔐 PIN Mới",
-            JOptionPane.QUESTION_MESSAGE);
+            JOptionPane.WARNING_MESSAGE);
         
         if (newPin == null) {
             logArea.append("[HỦY] Không reset PIN\n");
@@ -728,6 +705,19 @@ public class FunctionPanel extends JPanel {
         
         if (!newPin.matches("\\d{6}")) {
             JOptionPane.showMessageDialog(this, "❌ PIN phải là 6 chữ số!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        int confirm = JOptionPane.showConfirmDialog(this,
+            "CẢNH BÁO:\n\n" +
+            "Bạn cần kiểm tra lại thông tin khách hàng trước khi reset PIN.\n\n" +
+            "Xác nhận reset PIN?",
+            "Xác Nhận",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.WARNING_MESSAGE);
+            
+        if (confirm != JOptionPane.YES_OPTION) {
+            logArea.append("[HỦY] Không reset PIN\n");
             return;
         }
         
@@ -743,51 +733,101 @@ public class FunctionPanel extends JPanel {
                 return;
             }
             
-            // Read with OLD PIN to get decrypted data
-            javax.smartcardio.CommandAPDU readCmd = CardHelper.buildReadCommand();
-            javax.smartcardio.ResponseAPDU readResp = pcsc.transmit(readCmd);
-            if ((readResp.getSW() & 0xFF00) != 0x9000) {
-                logArea.append("[LỖI] Đọc thẻ thất bại\n");
-                return;
-            }
+            // Use admin reset PIN command (no old PIN required)
+            logArea.append("[BƯỚC 1] Gửi lệnh admin reset PIN...\n");
+            javax.smartcardio.CommandAPDU resetCmd = CardHelper.buildAdminResetPinCommand(newPin);
+            javax.smartcardio.ResponseAPDU resetResp = pcsc.transmit(resetCmd);
             
-            // Parse with old PIN to decrypt balance/expiry
-            CardData card;
-            try {
-                card = CardHelper.parseReadResponse(readResp.getData(), oldPin);
-                logArea.append("[OK] Decrypt thành công với PIN cũ\n");
-            } catch (Exception e) {
-                logArea.append("[LỖI] PIN cũ không đúng!\n");
-                JOptionPane.showMessageDialog(this, "❌ PIN cũ không đúng!", "Lỗi", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            
-            // Update PIN and reset retry counter
-            card.pin = newPin;
-            card.pinRetry = 5;
-            
-            // Write back with NEW PIN (will re-encrypt balance/expiry)
-            javax.smartcardio.CommandAPDU writeCmd = CardHelper.buildWriteCommand(card);
-            javax.smartcardio.ResponseAPDU writeResp = pcsc.transmit(writeCmd);
-            
-            if ((writeResp.getSW() & 0xFF00) == 0x9000) {
+            if ((resetResp.getSW() & 0xFF00) == 0x9000) {
                 logArea.append("[✅ THÀNH CÔNG] Đã reset PIN!\n");
                 logArea.append("PIN mới: " + newPin + "\n");
-                logArea.append("Retry counter: 5/5\n");
-                logArea.append("Balance/Expiry đã được re-encrypt với PIN mới\n");
+                logArea.append("Retry counter: 5/5\n\n");
                 
-                JOptionPane.showMessageDialog(this, 
-                    "✅ Reset PIN thành công!\n\n" +
-                    "PIN mới: " + newPin + "\n" +
-                    "Retry counter đã reset về 5/5",
-                    "Thành Công",
-                    JOptionPane.INFORMATION_MESSAGE);
+                // Auto-pull from Firebase
+                logArea.append("[FIREBASE] Đang tải balance/expiry từ server...\n");
+                try {
+                    FirebaseClient firebase = new FirebaseClient();
+                    CardFirebaseData fbData = firebase.getCardData(currentCard.userId);
                     
-                currentCard.pin = newPin;
-                currentCard.pinRetry = 5;
+                    currentCard.pin = newPin;
+                    currentCard.balance = fbData.balance;
+                    currentCard.expiryDays = fbData.expiryDays;
+                    currentCard.pinRetry = 5;
+                    
+                    logArea.append("[FIREBASE] ✅ Đã load từ server!\n");
+                    logArea.append("   Balance: " + fbData.balance + " VNĐ\n");
+                    logArea.append("   Expiry: " + fbData.expiryDays + " ngày\n");
+                    
+                } catch (Exception fbEx) {
+                    logArea.append("[FIREBASE] ⚠️ Không load được: " + fbEx.getMessage() + "\n");
+                    logArea.append("[CẢNH BÁO] Sẽ reset balance/expiry về 0\n");
+                    
+                    currentCard.pin = newPin;
+                    currentCard.balance = 0;
+                    currentCard.expiryDays = 0;
+                    currentCard.pinRetry = 5;
+                    
+                    JOptionPane.showMessageDialog(this,
+                        "⚠️ Không thể load data từ Firebase!\n\n" +
+                        fbEx.getMessage() + "\n\n" +
+                        "Balance/Expiry sẽ reset về 0\n" +
+                        "Vui lòng dùng 'Sửa Thông Tin' để cập nhật thủ công!",
+                        "Cảnh Báo",
+                        JOptionPane.WARNING_MESSAGE);
+                }
+                
+                // Verify PIN mới trước khi ghi để tránh SW 69 82
+                logArea.append("\n[BƯỚC 2] Xác thực PIN mới...\n");
+                javax.smartcardio.CommandAPDU verifyCmd = CardHelper.buildVerifyPinCommand(newPin);
+                javax.smartcardio.ResponseAPDU verifyResp = pcsc.transmit(verifyCmd);
+                if ((verifyResp.getSW() & 0xFF00) != 0x9000) {
+                    logArea.append("[LỖI] Verify PIN mới thất bại (SW: " + Integer.toHexString(verifyResp.getSW()).toUpperCase() + ")\n");
+                    JOptionPane.showMessageDialog(this,
+                        "❌ Không verify được PIN mới!",
+                        "Lỗi",
+                        JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+
+                // Ghi dữ liệu sau khi verify thành công
+                logArea.append("[BƯỚC 3] Ghi balance/expiry với PIN mới...\n");
+                javax.smartcardio.CommandAPDU writeCmd = CardHelper.buildWriteCommand(currentCard);
+                javax.smartcardio.ResponseAPDU writeResp = pcsc.transmit(writeCmd);
+                
+                if ((writeResp.getSW() & 0xFF00) == 0x9000) {
+                    logArea.append("[✅ HOÀN TẤT] Đã cập nhật đầy đủ thông tin!\n");
+                    logArea.append("PIN mới: " + newPin + "\n");
+                    logArea.append("Balance: " + currentCard.balance + " VNĐ\n");
+                    logArea.append("Expiry: " + currentCard.expiryDays + " ngày\n");
+                    
+                    // Push to Firebase (auto-sync)
+                    try {
+                        FirebaseClient firebase = new FirebaseClient();
+                        firebase.pushCardData(currentCard);
+                    } catch (Exception fbEx) {
+                        // Silent fail
+                    }
+                    
+                    JOptionPane.showMessageDialog(this,
+                        "✅ Reset PIN hoàn tất!\n\n" +
+                        "PIN mới: " + newPin + "\n" +
+                        "Balance: " + currentCard.balance + " VNĐ\n" +
+                        "Expiry: " + currentCard.expiryDays + " ngày\n\n" +
+                        "(Đã tự động load từ Firebase)",
+                        "Thành Công",
+                        JOptionPane.INFORMATION_MESSAGE);
+                } else {
+                    logArea.append("[LỖI] Không thể ghi balance/expiry (SW: " +
+                                 Integer.toHexString(writeResp.getSW()).toUpperCase() + ")\n");
+                    JOptionPane.showMessageDialog(this,
+                        "⚠️ PIN đã reset nhưng không ghi được balance/expiry\n\n" +
+                        "Vui lòng dùng nút 'Sửa Thông Tin' để cập nhật!",
+                        "Cảnh Báo",
+                        JOptionPane.WARNING_MESSAGE);
+                }
             } else {
                 logArea.append("[LỖI] Reset PIN thất bại (SW: " + 
-                             Integer.toHexString(writeResp.getSW()).toUpperCase() + ")\n");
+                             Integer.toHexString(resetResp.getSW()).toUpperCase() + ")\n");
             }
             
         } catch (Exception ex) {
@@ -801,7 +841,7 @@ public class FunctionPanel extends JPanel {
      */
     private void editCardInfo() {
         if (currentCard == null || currentCard.userId == 0) {
-            JOptionPane.showMessageDialog(this, "❌ Vui lòng quẹt thẻ trước!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Vui lòng quẹt thẻ trước!", "Lỗi", JOptionPane.ERROR_MESSAGE);
             return;
         }
         
@@ -840,8 +880,64 @@ public class FunctionPanel extends JPanel {
         gbc.gridx = 1;
         panel.add(datePanel, gbc);
         
+        // Balance/Expiry fields
+        gbc.gridx = 0; gbc.gridy = 2;
+        panel.add(new JLabel("Số Dư (VNĐ):"), gbc);
+        JTextField balanceField = new JTextField(String.valueOf(currentCard.balance), 15);
+        gbc.gridx = 1;
+        panel.add(balanceField, gbc);
+        
+        gbc.gridx = 0; gbc.gridy = 3;
+        panel.add(new JLabel("Hạn Tập (ngày):"), gbc);
+        JTextField expiryField = new JTextField(String.valueOf(currentCard.expiryDays), 15);
+        gbc.gridx = 1;
+        panel.add(expiryField, gbc);
+        
+        // Firebase load button
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2;
+        JButton loadFromFirebaseBtn = new JButton("📥 Load Balance/Expiry từ Firebase");
+        loadFromFirebaseBtn.setBackground(new Color(52, 168, 83));
+        loadFromFirebaseBtn.setForeground(Color.WHITE);
+        loadFromFirebaseBtn.setFocusPainted(false);
+        loadFromFirebaseBtn.addActionListener(e -> {
+            try {
+                FirebaseClient firebase = new FirebaseClient();
+                if (!firebase.testConnection()) {
+                    int configure = JOptionPane.showConfirmDialog(this,
+                        "⚠️ Chưa cấu hình Firebase!\n\n" +
+                        "Bạn có muốn cấu hình ngay không?",
+                        "Cấu Hình Firebase",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.WARNING_MESSAGE);
+                    if (configure == JOptionPane.YES_OPTION) {
+                        showFirebaseConfig();
+                        firebase = new FirebaseClient(); // Reload config
+                    } else {
+                        return;
+                    }
+                }
+                
+                CardFirebaseData fbData = firebase.getCardData(currentCard.userId);
+                balanceField.setText(String.valueOf(fbData.balance));
+                expiryField.setText(String.valueOf(fbData.expiryDays));
+                
+                JOptionPane.showMessageDialog(this,
+                    "✅ Đã load từ Firebase!\n\n" +
+                    "Balance: " + fbData.balance + " VNĐ\n" +
+                    "Expiry: " + fbData.expiryDays + " ngày",
+                    "Thành Công",
+                    JOptionPane.INFORMATION_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this,
+                    "❌ Lỗi kết nối Firebase!\n\n" + ex.getMessage(),
+                    "Lỗi",
+                    JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        panel.add(loadFromFirebaseBtn, gbc);
+        
         int option = JOptionPane.showConfirmDialog(this, panel, 
-            "✏️ Chỉnh Sửa Thông Tin", JOptionPane.OK_CANCEL_OPTION);
+            "Chỉnh Sửa Thông Tin", JOptionPane.OK_CANCEL_OPTION);
         if (option != JOptionPane.OK_OPTION) {
             logArea.append("[HỦY] Không chỉnh sửa\n");
             return;
@@ -881,6 +977,15 @@ public class FunctionPanel extends JPanel {
             card.dobMonth = (byte) ((Integer) monthSpinner.getValue()).intValue();
             card.dobYear = (short) ((Integer) yearSpinner.getValue()).intValue();
             
+            // Update balance/expiry if changed
+            try {
+                card.balance = Integer.parseInt(balanceField.getText().trim());
+                card.expiryDays = (short) Integer.parseInt(expiryField.getText().trim());
+            } catch (NumberFormatException nfe) {
+                JOptionPane.showMessageDialog(this, "❌ Balance/Expiry phải là số!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
             // Need PIN to write - use default or ask
             if (card.pin == null || card.pin.isEmpty()) {
                 String pin = JOptionPane.showInputDialog(this, 
@@ -895,7 +1000,20 @@ public class FunctionPanel extends JPanel {
                 card.pin = pin;
             }
             
+            // MUST verify PIN before WRITE (security requirement)
+            logArea.append("[BƯỚC 1] Verify PIN trước khi ghi...\n");
+            javax.smartcardio.CommandAPDU verifyCmd = CardHelper.buildVerifyPinCommand(card.pin);
+            javax.smartcardio.ResponseAPDU verifyResp = pcsc.transmit(verifyCmd);
+            if ((verifyResp.getSW() & 0xFF00) != 0x9000) {
+                logArea.append("[LỖI] PIN không đúng! (SW: " + 
+                             Integer.toHexString(verifyResp.getSW()).toUpperCase() + ")\n");
+                JOptionPane.showMessageDialog(this, "❌ PIN không đúng!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            logArea.append("[OK] PIN đúng!\n");
+            
             // Write back
+            logArea.append("[BƯỚC 2] Ghi dữ liệu mới...\n");
             javax.smartcardio.CommandAPDU writeCmd = CardHelper.buildWriteCommand(card);
             javax.smartcardio.ResponseAPDU writeResp = pcsc.transmit(writeCmd);
             
@@ -903,6 +1021,14 @@ public class FunctionPanel extends JPanel {
                 logArea.append("[✅ THÀNH CÔNG] Đã cập nhật thông tin!\n");
                 logArea.append("Họ tên mới: " + card.fullName + "\n");
                 logArea.append("Ngày sinh mới: " + card.getDobString() + "\n");
+                
+                // Push to Firebase (auto-sync)
+                try {
+                    FirebaseClient firebase = new FirebaseClient();
+                    firebase.pushCardData(card);
+                } catch (Exception fbEx) {
+                    // Silent fail
+                }
                 
                 JOptionPane.showMessageDialog(this, 
                     "✅ Cập nhật thành công!\n\n" +
@@ -919,6 +1045,63 @@ public class FunctionPanel extends JPanel {
             
         } catch (Exception ex) {
             logArea.append("[LỖI] " + ex.getMessage() + "\n");
+        }
+    }
+    
+    /**
+     * Show Firebase configuration dialog
+     */
+    private void showFirebaseConfig() {
+        FirebaseClient firebase = new FirebaseClient();
+        
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        
+        // Firebase URL
+        gbc.gridx = 0; gbc.gridy = 0;
+        panel.add(new JLabel("Database URL:"), gbc);
+        JTextField urlField = new JTextField(firebase.getDatabaseUrl() != null ? firebase.getDatabaseUrl() : "", 30);
+        gbc.gridx = 1;
+        panel.add(urlField, gbc);
+        
+        // Example hint
+        gbc.gridx = 1; gbc.gridy = 1;
+        JLabel hintLabel = new JLabel("<html><i>Ví dụ: https://your-project.firebaseio.com</i></html>");
+        hintLabel.setForeground(Color.GRAY);
+        panel.add(hintLabel, gbc);
+        
+        // API Key (optional)
+        gbc.gridx = 0; gbc.gridy = 2;
+        panel.add(new JLabel("API Key (tùy chọn):"), gbc);
+        JTextField apiKeyField = new JTextField(20);
+        gbc.gridx = 1;
+        panel.add(apiKeyField, gbc);
+        
+        int option = JOptionPane.showConfirmDialog(this, panel,
+            "⚙️ Cấu Hình Firebase", JOptionPane.OK_CANCEL_OPTION);
+            
+        if (option == JOptionPane.OK_OPTION) {
+            String url = urlField.getText().trim();
+            String apiKey = apiKeyField.getText().trim();
+            
+            if (url.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "❌ Database URL không được để trống!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            firebase.setDatabaseUrl(url);
+            if (!apiKey.isEmpty()) {
+                firebase.setApiKey(apiKey);
+            }
+            
+            JOptionPane.showMessageDialog(this,
+                "✅ Đã lưu cấu hình Firebase!\n\n" +
+                "Database URL: " + url,
+                "Thành Công",
+                JOptionPane.INFORMATION_MESSAGE);
         }
     }
 }

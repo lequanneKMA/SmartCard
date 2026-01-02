@@ -465,7 +465,15 @@ public class CustomerWindow extends JFrame {
                 infoArea.append("💳 Số dư còn: " + String.format("%,d VND", currentCard.balance) + "\n");
                 displayCardInfo();
                 
-                // 🔄 Broadcast để Staff thấy thay đổi
+                // � Sync to Firebase
+                try {
+                    FirebaseClient firebase = new FirebaseClient();
+                    firebase.pushCardData(currentCard);
+                } catch (Exception fbEx) {
+                    // Silent fail - không cần thông báo user
+                }
+                
+                // �🔄 Broadcast để Staff thấy thay đổi
                 CardEventBroadcaster.getInstance().broadcastCardSwipe(currentCard);
             } else {
                 infoArea.append("[LỖI] Gia hạn thất bại\n");
@@ -801,7 +809,15 @@ public class CustomerWindow extends JFrame {
                             infoArea.append("[OK] Thanh toán thành công!\n");
                             infoArea.append("Số dư mới: " + String.format("%,d VND", currentCard.balance) + "\n");
                             displayCardInfo();
-                            
+
+                            // 📤 Sync to Firebase (realtime update balance)
+                            try {
+                                FirebaseClient firebase = new FirebaseClient();
+                                firebase.pushCardData(currentCard);
+                            } catch (Exception fbEx) {
+                                // Silent fail, không làm phiền người dùng
+                            }
+
                             // 🔄 Broadcast để Staff thấy số dư mới
                             CardEventBroadcaster.getInstance().broadcastCardSwipe(currentCard);
                             
@@ -980,6 +996,15 @@ public class CustomerWindow extends JFrame {
                 infoArea.append("💰 Đã nạp: " + String.format("%,d VND", finalAmount) + "\n");
                 infoArea.append("💳 Số dư mới: " + String.format("%,d VND", currentCard.balance) + "\n");
                 displayCardInfo();
+                
+                // 📤 Sync to Firebase
+                try {
+                    FirebaseClient firebase = new FirebaseClient();
+                    firebase.pushCardData(currentCard);
+                } catch (Exception fbEx) {
+                    // Silent fail
+                }
+                
                 CardEventBroadcaster.getInstance()
                     .broadcastCardSwipe(currentCard);
             } else {

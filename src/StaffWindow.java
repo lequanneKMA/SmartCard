@@ -15,7 +15,7 @@ public class StaffWindow extends JFrame implements RoleSelectionPanel.RoleListen
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(1100, 700);
         setLocationRelativeTo(null);
-        setLocation(800, 100); // Offset so không trùng CustomerWindow
+        setLocation(800, 100); 
 
         // Add modern title bar
         JPanel titlePanel = new JPanel() {
@@ -31,7 +31,7 @@ public class StaffWindow extends JFrame implements RoleSelectionPanel.RoleListen
             }
         };
         titlePanel.setLayout(new FlowLayout(FlowLayout.CENTER, 10, 12));
-        JLabel titleLabel = new JLabel("⚙️ ADMIN/NHÂN VIÊN - Quản Lý Thẻ GYM ⚙️");
+        JLabel titleLabel = new JLabel("ADMIN/NHÂN VIÊN - Quản Lý Thẻ GYM");
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
         titleLabel.setForeground(Color.WHITE);
         titlePanel.add(titleLabel);
