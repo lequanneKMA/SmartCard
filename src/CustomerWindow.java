@@ -148,9 +148,7 @@ public class CustomerWindow extends JFrame {
         if (!pinStr.matches("\\d{6}")) {
             throw new NumberFormatException("PIN phải là 6 chữ số");
         }
-        int pinValue = Integer.parseInt(pinStr);
-        // Chuyển 6 số thành 1 byte (lấy 2 số cuối % 256)
-        byte pin = (byte) (pinValue % 256);
+        String pin = pinStr;
 
         ResponseAPDU r = pcsc.transmit(
             CardHelper.buildVerifyPinCommand(pin)
@@ -165,9 +163,16 @@ public class CustomerWindow extends JFrame {
             );
             return false;
         }
+        
+        // Update currentCard with decrypted data from VERIFY_PIN response
+        currentCard = CardHelper.parseVerifyPinResponse(r, pin);
+        // ✅ LƯU PIN để các thao tác WRITE sau dùng đúng PIN
+        currentCard.pin = pin;
+        displayCardInfo();
+        
         return true;
     } catch (Exception e) {
-        JOptionPane.showMessageDialog(this, "❌ PIN phải là 6 chữ số (000000-999999)", "Lỗi", JOptionPane.ERROR_MESSAGE);
+        JOptionPane.showMessageDialog(this, "❌ " + e.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
         return false;
     }
 }
@@ -226,12 +231,14 @@ public class CustomerWindow extends JFrame {
                 pcsc.connectFirstPresentOrFirst();
                 infoArea.append("[OK] Kết nối thẻ thành công!\n\n");
 
-                // Select applet
+                // Select applet - ✅ AID đã fix: 26 12 20 03 03 00 (6 bytes)
                 javax.smartcardio.CommandAPDU selectCmd = new javax.smartcardio.CommandAPDU(0x00, 0xA4, 0x04, 0x00,
-                        new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x20,(byte)0x03,(byte)0x00});
+                        new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x03,(byte)0x00});
                 javax.smartcardio.ResponseAPDU selectResp = pcsc.transmit(selectCmd);
                 if ((selectResp.getSW() & 0xFF00) != 0x9000) {
-                    infoArea.append("[LỖI] Không thể kết nối ứng dụng trên thẻ\n");
+                    infoArea.append("[LỖI] Không thể kết nối ứng dụng trên thẻ (SW: 0x" + 
+                        Integer.toHexString(selectResp.getSW()).toUpperCase() + ")\n");
+                    infoArea.append("[INFO] Đảm bảo applet đã được install với AID: 26 12 20 03 03 00\n");
                     statusLabel.setText("Lỗi: Thẻ không hợp lệ");
                     statusLabel.setForeground(Color.RED);
                     swipeBtn.setEnabled(true);
@@ -257,10 +264,23 @@ public class CustomerWindow extends JFrame {
                 }
 
                 byte[] responseData = readResp.getData();
-                infoArea.append("[DEBUG] Response length: " + responseData.length + " bytes (expected 61)\n");
+                infoArea.append("[DEBUG] Response length: " + responseData.length + " bytes\n");
                 infoArea.append("[DEBUG] Response HEX: " + PcscClient.toHex(responseData) + "\n");
 
-                currentCard = CardHelper.parseReadResponse(responseData);
+                // Parse basic info only (UserID, name, DOB) - skip encrypted fields
+                // We'll get decrypted data after PIN verification
+                currentCard = new CardData();
+                currentCard.userId = ((responseData[0] & 0xFF) << 8) | (responseData[1] & 0xFF);
+                currentCard.pinRetry = responseData[34];
+                currentCard.dobDay = responseData[35];
+                currentCard.dobMonth = responseData[36];
+                currentCard.dobYear = (short) (((responseData[37] & 0xFF) << 8) | (responseData[38] & 0xFF));
+                
+                byte[] nameBytes = new byte[25];
+                System.arraycopy(responseData, 39, nameBytes, 0, 25);
+                currentCard.fullName = new String(nameBytes, "UTF-8").trim();
+                
+                infoArea.append("[INFO] UserID: " + currentCard.userId + ", Name: " + currentCard.fullName + "\n");
 
                 // ===== XÁC THỰC PIN =====
                 // Check if card is permanently locked
@@ -469,23 +489,25 @@ public class CustomerWindow extends JFrame {
         JPasswordField oldPinField = new JPasswordField();
         int opt = JOptionPane.showConfirmDialog(
             this,
-            new Object[]{"PIN hiện tại (0–255):", oldPinField},
+            new Object[]{"🔐 PIN hiện tại (6 chữ số):", oldPinField},
             "Xác thực PIN",
             JOptionPane.OK_CANCEL_OPTION
         );
         if (opt != JOptionPane.OK_OPTION) return;
 
-        byte oldPin;
+        String oldPin;
         try {
-            int v = Integer.parseInt(new String(oldPinField.getPassword()));
-            if (v < 0 || v > 255) throw new NumberFormatException();
-            oldPin = (byte) v;
+            String pinStr = new String(oldPinField.getPassword());
+            if (!pinStr.matches("\\d{6}")) {
+                throw new NumberFormatException("PIN phải là 6 chữ số");
+            }
+            oldPin = pinStr;
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "PIN phải là số từ 0–255");
+            JOptionPane.showMessageDialog(this, "❌ PIN phải là 6 chữ số (000000-999999)");
             return;
         }
 
-        // ✅ VERIFY PIN TRÊN THẺ (KHÔNG SO SÁNH Ở CLIENT)
+        // ✅ VERIFY PIN cũ và lấy dữ liệu đã giải mã
         javax.smartcardio.CommandAPDU verifyCmd =
                 CardHelper.buildVerifyPinCommand(oldPin);
         javax.smartcardio.ResponseAPDU verifyResp = pcsc.transmit(verifyCmd);
@@ -495,45 +517,86 @@ public class CustomerWindow extends JFrame {
             JOptionPane.showMessageDialog(this, "❌ " + status);
             return;
         }
+        
+        // 💾 Lưu dữ liệu đã giải mã (sẽ re-encrypt với PIN mới)
+        CardData decryptedData = CardHelper.parseVerifyPinResponse(verifyResp, oldPin);
+        infoArea.append("[OK] Đã lấy dữ liệu: Balance=" + decryptedData.balance + ", Expiry=" + decryptedData.expiryDays + "\n");
 
         // 🔁 Nhập PIN mới
         JPasswordField newPinField = new JPasswordField();
         opt = JOptionPane.showConfirmDialog(
             this,
-            new Object[]{"PIN mới (0–255):", newPinField},
+            new Object[]{"🔑 PIN mới (6 chữ số):", newPinField},
             "Đổi PIN",
             JOptionPane.OK_CANCEL_OPTION
         );
         if (opt != JOptionPane.OK_OPTION) return;
 
-        byte newPin;
+        String newPin;
         try {
-            int v = Integer.parseInt(new String(newPinField.getPassword()));
-            if (v < 0 || v > 255) throw new NumberFormatException();
-            newPin = (byte) v;
+            String pinStr = new String(newPinField.getPassword());
+            if (!pinStr.matches("\\d{6}")) {
+                throw new NumberFormatException("PIN phải là 6 chữ số");
+            }
+            newPin = pinStr;
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "PIN mới phải là số từ 0–255");
+            JOptionPane.showMessageDialog(this, "❌ PIN mới phải là 6 chữ số (000000-999999)");
             return;
         }
 
-        // 🔄 Cập nhật PIN + reset retry counter
-        currentCard.pinRetry = CardData.MAX_PIN_RETRY; // ví dụ là 5
+        // 🔄 Gọi CHANGE_PIN command trên thẻ
         infoArea.append("\n[TIẾN HÀNH] Đổi PIN...\n");
 
-        javax.smartcardio.CommandAPDU writeCmd =
-                CardHelper.buildWriteCommand(currentCard);
-        javax.smartcardio.ResponseAPDU writeResp = pcsc.transmit(writeCmd);
+        javax.smartcardio.CommandAPDU changeCmd =
+                CardHelper.buildChangePinCommand(oldPin, newPin);
+        javax.smartcardio.ResponseAPDU changeResp = pcsc.transmit(changeCmd);
 
-        if ((writeResp.getSW() & 0xFF00) == 0x9000) {
+        if (changeResp.getSW() == 0x9000) {
             infoArea.append("[OK] Đổi PIN thành công!\n");
-            JOptionPane.showMessageDialog(this, "✅ Đổi PIN thành công!");
-            displayCardInfo();
+            infoArea.append("[INFO] Card đã tự động re-encrypt dữ liệu với PIN mới\n");
+            
+            // ✅ ĐỌC LẠI THẺ thay vì VERIFY (vì session vẫn hợp lệ)
+            try {
+                javax.smartcardio.CommandAPDU readCmd = CardHelper.buildReadCommand();
+                javax.smartcardio.ResponseAPDU readResp = pcsc.transmit(readCmd);
+                
+                if (readResp.getSW() == 0x9000) {
+                    // ✅ DEBUG: In ra raw bytes để kiểm tra
+                    byte[] rawData = readResp.getData();
+                    infoArea.append("[DEBUG] Raw response length: " + rawData.length + " bytes\n");
+                    infoArea.append("[DEBUG] Raw response (hex): " + PcscClient.toHex(rawData) + "\n");
+                    infoArea.append("[DEBUG] Encrypted balance bytes [2-5]: ");
+                    for (int i = 2; i <= 5; i++) {
+                        infoArea.append(String.format("%02X ", rawData[i]));
+                    }
+                    infoArea.append("\n");
+                    
+                    // Parse và decrypt với PIN mới
+                    currentCard = CardHelper.parseReadResponse(rawData, newPin);
+                    infoArea.append("[DEBUG] Parsed balance: " + currentCard.balance + " VND\n");
+                    infoArea.append("[DEBUG] Parsed expiry: " + currentCard.expiryDays + " days\n");
+                    
+                    // ✅ LƯU PIN MỚI để các thao tác WRITE sau dùng đúng PIN
+                    currentCard.pin = newPin;
+                    displayCardInfo();
+                    
+                    JOptionPane.showMessageDialog(this, "✅ Đổi PIN thành công!");
+                } else {
+                    infoArea.append("[CẢNH BÁO] Không thể đọc thẻ, vui lòng thử lại\n");
+                    JOptionPane.showMessageDialog(this, "✅ Đổi PIN thành công!\n⚠️ Vui lòng quẹt thẻ lại để xem dữ liệu");
+                }
+            } catch (Exception ex) {
+                infoArea.append("[LỖI] " + ex.getMessage() + "\n");
+                JOptionPane.showMessageDialog(this, "✅ Đổi PIN thành công!\n⚠️ " + ex.getMessage());
+            }
 
             // 🔄 Sync cho Staff
             CardEventBroadcaster.getInstance()
                     .broadcastCardSwipe(currentCard);
         } else {
-            infoArea.append("[LỖI] Đổi PIN thất bại\n");
+            String status = CardHelper.parsePinStatus(changeResp.getSW());
+            infoArea.append("[LỖI] Đổi PIN thất bại: " + status + "\n");
+            JOptionPane.showMessageDialog(this, "❌ Đổi PIN thất bại: " + status);
         }
 
     } catch (Exception ex) {

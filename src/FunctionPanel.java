@@ -97,7 +97,7 @@ public class FunctionPanel extends JPanel {
 
     private void addAdminButtons() {
         controlPanel.removeAll();
-        logArea.setText("🔐 Admin: Tạo hoặc quẹt thẻ\n");
+        logArea.setText("Admin: Tạo hoặc quẹt thẻ\n");
 
         JButton createBtn = createModernButton("Tạo Thẻ Mới", new Color(76, 175, 80));
         createBtn.addActionListener(e -> createNewCard());
@@ -119,10 +119,10 @@ public class FunctionPanel extends JPanel {
         this.currentRole = role;
 
         if (role.equals("ADMIN")) {
-            roleLabel.setText("🔐 ADMIN");
+            roleLabel.setText("ADMIN");
             addAdminButtons();
         } else {
-            roleLabel.setText("👤 NHÂN VIÊN");
+            roleLabel.setText("NHÂN VIÊN");
             addEmployeeButtons();
         }
     }
@@ -139,7 +139,7 @@ public class FunctionPanel extends JPanel {
 
                 // Select applet
                 javax.smartcardio.CommandAPDU selectCmd = new javax.smartcardio.CommandAPDU(0x00, 0xA4, 0x04, 0x00,
-                        new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x20,(byte)0x03,(byte)0x00});
+                        new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x03,(byte)0x00});
                 javax.smartcardio.ResponseAPDU selectResp = pcsc.transmit(selectCmd);
 
                 if ((selectResp.getSW() & 0xFF00) != 0x9000) {
@@ -257,8 +257,7 @@ public class FunctionPanel extends JPanel {
             newCard.dobYear = (short) ((Integer) yearSpinner.getValue()).intValue();
             
             // PIN
-            int pinValue = Integer.parseInt(pinStr);
-            newCard.pin = (byte) (pinValue % 256);
+            newCard.pin = pinStr; // Use full 6-digit string
             newCard.pinRetry = 5; // Default 5 attempts
 
             logArea.append("\n[BƯỚC 1] Kết nối thẻ...\n");
@@ -268,7 +267,7 @@ public class FunctionPanel extends JPanel {
             // Select applet
             logArea.append("[BƯỚC 2] Chọn applet...\n");
             javax.smartcardio.CommandAPDU selectCmd = new javax.smartcardio.CommandAPDU(0x00, 0xA4, 0x04, 0x00,
-                    new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x20,(byte)0x03,(byte)0x00});
+                    new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x03,(byte)0x00});
             javax.smartcardio.ResponseAPDU selectResp = pcsc.transmit(selectCmd);
             
             if ((selectResp.getSW() & 0xFF00) != 0x9000) {
@@ -277,6 +276,38 @@ public class FunctionPanel extends JPanel {
                 return;
             }
             logArea.append("[OK] Applet đã sẵn sàng!\n");
+
+            // Check if card is blank by reading
+            logArea.append("[BƯỚC 2.5] Kiểm tra trạng thái thẻ...\n");
+            javax.smartcardio.CommandAPDU readCmd = CardHelper.buildReadCommand();
+            javax.smartcardio.ResponseAPDU readResp = pcsc.transmit(readCmd);
+            
+            if ((readResp.getSW() & 0xFF00) == 0x9000) {
+                byte[] data = readResp.getData();
+                int existingUserId = ((data[0] & 0xFF) << 8) | (data[1] & 0xFF);
+                
+                if (existingUserId != 0) {
+                    logArea.append("[CẢNH BÁO] Thẻ đã có dữ liệu (UserID: " + existingUserId + ")\n");
+                    logArea.append("[BƯỚC 2.6] Xóa dữ liệu cũ (reset thẻ)...\n");
+                    
+                    // Write blank data (UserID=0) to reset card
+                    byte[] blankData = new byte[64];
+                    blankData[34] = 5; // Reset PIN retry to 5
+                    
+                    javax.smartcardio.CommandAPDU deleteCmd = 
+                        new javax.smartcardio.CommandAPDU(0x00, 0xD0, 0x00, 0x00, blankData);
+                    javax.smartcardio.ResponseAPDU deleteResp = pcsc.transmit(deleteCmd);
+                    
+                    if ((deleteResp.getSW() & 0xFF00) != 0x9000) {
+                        logArea.append("[LỖI] Không thể xóa dữ liệu cũ (SW: " + 
+                                     Integer.toHexString(deleteResp.getSW()).toUpperCase() + ")\n");
+                        return;
+                    }
+                    logArea.append("[OK] Đã xóa dữ liệu cũ, thẻ đã trống!\n");
+                } else {
+                    logArea.append("[OK] Thẻ đang trống, sẵn sàng ghi mới\n");
+                }
+            }
 
             // Write card data
             logArea.append("[BƯỚC 3] Ghi dữ liệu vào thẻ...\n");
@@ -298,7 +329,7 @@ public class FunctionPanel extends JPanel {
             logArea.append("🎫 ID Thẻ: " + newCard.userId + "\n");
             logArea.append("💰 Số Dư: " + String.format("%,d VND", newCard.balance) + "\n");
             logArea.append("📅 Hạn Tập: " + newCard.expiryDays + " ngày\n");
-            logArea.append("🔐 PIN: " + pinStr + " (mã hóa: " + (pinValue % 256) + ")\n");
+            logArea.append("🔐 PIN: " + pinStr + "\n");
             logArea.append("════════════════════════════\n");
             
             JOptionPane.showMessageDialog(this, 
@@ -443,7 +474,7 @@ public class FunctionPanel extends JPanel {
             
             // Select applet
             javax.smartcardio.CommandAPDU selectCmd = new javax.smartcardio.CommandAPDU(0x00, 0xA4, 0x04, 0x00,
-                    new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x20,(byte)0x03,(byte)0x00});
+                    new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x03,(byte)0x00});
             javax.smartcardio.ResponseAPDU selectResp = pcsc.transmit(selectCmd);
             if ((selectResp.getSW() & 0xFF00) != 0x9000) {
                 logArea.append("[LỖI] Không thể select applet\n");
@@ -488,7 +519,7 @@ public class FunctionPanel extends JPanel {
             emptyCard.userId = 0;
             emptyCard.balance = 0;
             emptyCard.expiryDays = 0;
-            emptyCard.pin = 0;
+            emptyCard.pin = "000000"; // Default PIN for blank card
             emptyCard.pinRetry = 5;
             emptyCard.fullName = "";
             emptyCard.dobDay = 0;
