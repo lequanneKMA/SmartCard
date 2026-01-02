@@ -112,15 +112,49 @@ public class CardHelper {
     }
 
     /**
-     * Parse response from READ command (64 bytes)
+     * Parse response from READ command (64 bytes) - FOR ADMIN USE
      * 
-     * NOTE: Balance & Expiry are ENCRYPTED in the response!
-     * To decrypt, you need the PIN.
+     * Parses only UNENCRYPTED fields: UserID, Name, DOB, PIN retry counter
+     * Balance & Expiry will be set to -1 (encrypted, need PIN to view)
+     * 
+     * Use parseReadResponse(data, pin) to decrypt all fields.
      */
     public static CardData parseReadResponse(byte[] data) throws Exception {
-        throw new UnsupportedOperationException(
-            "READ response is encrypted! Use parseReadResponse(data, pin) instead"
-        );
+        if (data == null || data.length != 64) {
+            throw new IllegalArgumentException("Invalid data length: expected 64 bytes");
+        }
+        
+        CardData card = new CardData();
+        
+        // [0-1] User ID (unencrypted)
+        card.userId = ((data[0] & 0xFF) << 8) | (data[1] & 0xFF);
+        
+        // [2-17] Encrypted balance/expiry - skip, set to -1
+        card.balance = -1;
+        card.expiryDays = -1;
+        
+        // [18-33] PIN hash - skip (admin doesn't see this)
+        
+        // [34] PIN retry counter (unencrypted)
+        int retryCount = data[34] & 0xFF;
+        
+        // [35-38] DOB (unencrypted)
+        card.dobDay = (byte) (data[35] & 0xFF);
+        card.dobMonth = (byte) (data[36] & 0xFF);
+        card.dobYear = (short) (((data[37] & 0xFF) << 8) | (data[38] & 0xFF));
+        
+        // [39-63] Full name (unencrypted, 25 bytes UTF-8)
+        int nameLen = 0;
+        for (int i = 39; i < 64; i++) {
+            if (data[i] != 0) nameLen = i - 39 + 1;
+            else break;
+        }
+        if (nameLen > 0) {
+            card.fullName = new String(data, 39, nameLen, "UTF-8").trim();
+        }
+        
+        card.pin = null; // Admin doesn't know PIN
+        return card;
     }
     
     /**
@@ -172,16 +206,16 @@ public class CardHelper {
      */
     public static String parsePinStatus(int sw) {
         if (sw == 0x9000) {
-            return "✅ PIN Correct";
+            return "PIN Correct";
         } else if (sw == 0x6983) {
-            return "🔒 Card Permanently Locked (0 attempts left)";
+            return "Card Permanently Locked (0 attempts left)";
         } else if ((sw & 0xFFF0) == 0x63C0) {
             int tries = sw & 0x0F;
-            return "❌ PIN Wrong - " + tries + "/5 attempts remaining";
+            return "PIN Wrong - " + tries + "/5 attempts remaining";
         } else if (sw == 0x6982) {
-            return "⚠️ Security status not satisfied (verify PIN first)";
+            return "Security status not satisfied (verify PIN first)";
         } else {
-            return "❓ Unknown error: 0x" + Integer.toHexString(sw).toUpperCase();
+            return "Unknown error: 0x" + Integer.toHexString(sw).toUpperCase();
         }
     }
     

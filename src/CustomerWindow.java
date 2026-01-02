@@ -69,14 +69,14 @@ public class CustomerWindow extends JFrame {
         bottomPanel.setBorder(BorderFactory.createEmptyBorder(12, 15, 12, 15));
 
         // Status label with icon
-        statusLabel = new JLabel("✓ Sẵn sàng");
+        statusLabel = new JLabel("Sẵn sàng");
         statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         statusLabel.setForeground(new Color(60, 180, 60));
         bottomPanel.add(statusLabel);
         bottomPanel.add(Box.createVerticalStrut(8));
 
         // Swipe button - highlighted primary action
-        swipeBtn = new JButton("QUẸT THẺ - Đặt Thẻ Vào Vị Trí");
+        swipeBtn = new JButton("QUẸT THẺ");
         swipeBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
         swipeBtn.setPreferredSize(new Dimension(650, 45));
         swipeBtn.setMaximumSize(new Dimension(650, 45));
@@ -100,7 +100,7 @@ public class CustomerWindow extends JFrame {
         personalInfoBtn.addActionListener(e -> showPersonalInfo());
         buttonRow.add(personalInfoBtn);
 
-        renewBtn = createModernButton(" Gia Hạn Gói Tập", new Color(33, 150, 243));
+        renewBtn = createModernButton(" Gia hạn gói tập", new Color(33, 150, 243));
         renewBtn.addActionListener(e -> renewPackage());
         buttonRow.add(renewBtn);
 
@@ -334,7 +334,7 @@ public class CustomerWindow extends JFrame {
             infoArea.append("==== THÔNG TIN THẺ ====\n\n");
             infoArea.append("ID Thẻ: " + currentCard.userId + "\n");
             if (currentCard.fullName != null && !currentCard.fullName.isEmpty()) {
-                infoArea.append("👤 Họ Tên: " + currentCard.fullName + "\n");
+                infoArea.append("Họ Tên: " + currentCard.fullName + "\n");
             }
             infoArea.append("Số Dư: " + String.format("%,d VND", currentCard.balance) + "\n");
             infoArea.append("Hạn Sử Dụng: " + currentCard.expiryDays + " ngày\n\n");

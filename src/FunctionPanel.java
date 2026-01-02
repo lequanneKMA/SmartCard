@@ -85,9 +85,9 @@ public class FunctionPanel extends JPanel {
 
     private void addEmployeeButtons() {
         controlPanel.removeAll();
-        logArea.setText("👤 Nhân Viên: Quẹt thẻ khách để xem thông tin\n");
+        logArea.setText("Nhân Viên: Quẹt thẻ khách để xem thông tin\n");
 
-        JButton swipeBtn = createModernButton("🔷 Quẹt Thẻ Khách", new Color(33, 150, 243));
+        JButton swipeBtn = createModernButton("Quẹt Thẻ Khách", new Color(33, 150, 243));
         swipeBtn.addActionListener(e -> readCustomerCard());
         controlPanel.add(swipeBtn);
 
@@ -159,12 +159,17 @@ public class FunctionPanel extends JPanel {
                 currentCard = CardHelper.parseReadResponse(readResp.getData());
                 logArea.append("==== THÔNG TIN KHÁCH HÀNG ====\n");
                 if (currentCard.fullName != null && !currentCard.fullName.isEmpty()) {
-                    logArea.append("👤 Họ Tên: " + currentCard.fullName + "\n");
+                    logArea.append("👤Họ Tên: " + currentCard.fullName + "\n");
                 }
-                logArea.append("🎂 Ngày Sinh: " + currentCard.getDobString() + "\n");
-                logArea.append("🎫 ID: " + currentCard.userId + "\n");
-                logArea.append("💰 Số Dư: " + String.format("%,d VND", currentCard.balance) + "\n");
-                logArea.append("📅 Hạn Tập: " + currentCard.expiryDays + " ngày\n");
+                logArea.append("Ngày Sinh: " + currentCard.getDobString() + "\n");
+                logArea.append("ID: " + currentCard.userId + "\n");
+                if (currentCard.balance == -1 || currentCard.expiryDays == -1) {
+                    logArea.append("Số Dư: [Mã hóa - cần PIN để xem]\n");
+                    logArea.append("Hạn Tập: [Mã hóa - cần PIN để xem]\n");
+                } else {
+                    logArea.append("💰 Số Dư: " + String.format("%,d VND", currentCard.balance) + "\n");
+                    logArea.append("📅 Hạn Tập: " + currentCard.expiryDays + " ngày\n");
+                }
 
             } catch (Exception ex) {
                 logArea.append("[LỖI] " + ex.getMessage() + "\n");
@@ -182,13 +187,13 @@ public class FunctionPanel extends JPanel {
         // Họ tên (bắt buộc)
         JTextField nameField = new JTextField(20);
         gbc.gridx = 0; gbc.gridy = 0;
-        panel.add(new JLabel("👤 Họ Tên (*):" ), gbc);
+        panel.add(new JLabel("Họ Tên (*):" ), gbc);
         gbc.gridx = 1;
         panel.add(nameField, gbc);
 
         // Ngày sinh (DatePicker)
         gbc.gridx = 0; gbc.gridy = 1;
-        panel.add(new JLabel("🎂 Ngày Sinh (*):"), gbc);
+        panel.add(new JLabel("Ngày Sinh (*):"), gbc);
         JPanel datePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         JSpinner daySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 31, 1));
         JSpinner monthSpinner = new JSpinner(new SpinnerNumberModel(1, 1, 12, 1));
@@ -208,21 +213,21 @@ public class FunctionPanel extends JPanel {
         // Số dư (optional - mặc định 0)
         JTextField balanceField = new JTextField("0");
         gbc.gridx = 0; gbc.gridy = 2;
-        panel.add(new JLabel("💰 Số Dư (VND):"), gbc);
+        panel.add(new JLabel("Số Dư (VND):"), gbc);
         gbc.gridx = 1;
         panel.add(balanceField, gbc);
 
         // Hạn tập (optional - mặc định 0)
         JTextField expiryField = new JTextField("0");
         gbc.gridx = 0; gbc.gridy = 3;
-        panel.add(new JLabel("📅 Hạn Tập (ngày):"), gbc);
+        panel.add(new JLabel("Hạn Tập (ngày):"), gbc);
         gbc.gridx = 1;
         panel.add(expiryField, gbc);
 
         // PIN (6 chữ số, mặc định 000000)
         JTextField pinField = new JTextField("000000");
         gbc.gridx = 0; gbc.gridy = 4;
-        panel.add(new JLabel("🔐 PIN (6 số):"), gbc);
+        panel.add(new JLabel("PIN (6 số):"), gbc);
         gbc.gridx = 1;
         panel.add(pinField, gbc);
 
@@ -324,19 +329,15 @@ public class FunctionPanel extends JPanel {
             logArea.append("════════════════════════════\n");
             logArea.append("    ✅ TẠO THẺ THÀNH CÔNG\n");
             logArea.append("════════════════════════════\n");
-            logArea.append("👤 Họ Tên: " + newCard.fullName + "\n");
-            logArea.append("🎂 Ngày Sinh: " + newCard.getDobString() + "\n");
-            logArea.append("🎫 ID Thẻ: " + newCard.userId + "\n");
-            logArea.append("💰 Số Dư: " + String.format("%,d VND", newCard.balance) + "\n");
-            logArea.append("📅 Hạn Tập: " + newCard.expiryDays + " ngày\n");
-            logArea.append("🔐 PIN: " + pinStr + "\n");
+            logArea.append(formatCardInfo(newCard));
+            logArea.append("PIN: " + pinStr + "\n");
             logArea.append("════════════════════════════\n");
             
             JOptionPane.showMessageDialog(this, 
                 "✅ Tạo thẻ thành công!\n\n" +
-                "👤 " + newCard.fullName + "\n" +
-                "🎫 ID: " + newCard.userId + "\n" +
-                "🔐 PIN: " + pinStr,
+                "Họ Tên: " + newCard.fullName + "\n" +
+                "ID: " + newCard.userId + "\n" +
+                "PIN: " + pinStr,
                 "Thành Công",
                 JOptionPane.INFORMATION_MESSAGE);
                 
@@ -388,13 +389,7 @@ public class FunctionPanel extends JPanel {
     private void displayCardInfo(CardData card) {
         logArea.setText("");
         logArea.append("═══ KHÁCH HÀNG QUẸT THẺ ═══\n\n");
-        if (card.fullName != null && !card.fullName.isEmpty()) {
-            logArea.append("👤 Họ Tên: " + card.fullName + "\n");
-        }
-        logArea.append("🎂 Ngày Sinh: " + card.getDobString() + "\n");
-        logArea.append("🎫 ID Thẻ: " + card.userId + "\n");
-        logArea.append("💰 Số Dư: " + String.format("%,d VND", card.balance) + "\n");
-        logArea.append("📅 Hạn Tập: " + card.expiryDays + " ngày\n");
+        logArea.append(formatCardInfo(card));
         
         if (currentRole.equals("ADMIN")) {
             logArea.append("\n⚠️ ADMIN INFO:\n");
@@ -407,6 +402,35 @@ public class FunctionPanel extends JPanel {
         } else if (card.expiryDays <= 7) {
             logArea.append("\n⚠️ THẺ SẮP HẾT HẠN!\n");
         }
+    }
+    
+    /**
+     * Format card info as string (reusable helper)
+     */
+    private String formatCardInfo(CardData card) {
+        StringBuilder sb = new StringBuilder();
+        if (card.fullName != null && !card.fullName.isEmpty()) {
+            sb.append("Họ Tên: ").append(card.fullName).append("\n");
+        } else {
+            sb.append("Họ Tên: N/A\n");
+        }
+        sb.append("Ngày Sinh: ").append(card.getDobString()).append("\n");
+        sb.append("ID: ").append(card.userId).append("\n");
+        
+        // Handle encrypted balance/expiry
+        if (card.balance == -1) {
+            sb.append("Số Dư: [Mã hóa - cần PIN để xem]\n");
+        } else {
+            sb.append("Số Dư: ").append(String.format("%,d", card.balance)).append(" VND\n");
+        }
+        
+        if (card.expiryDays == -1) {
+            sb.append("Hạn Tập: [Mã hóa - cần PIN để xem]\n");
+        } else {
+            sb.append("Hạn Tập: ").append(card.expiryDays).append(" ngày\n");
+        }
+        
+        return sb.toString();
     }
     
     /**
@@ -426,7 +450,7 @@ public class FunctionPanel extends JPanel {
         int result = JOptionPane.showConfirmDialog(
             this,
             message.toString(),
-            "🛒 Xác Nhận Mua Hàng",
+            "Xác Nhận Mua Hàng",
             JOptionPane.YES_NO_OPTION,
             JOptionPane.QUESTION_MESSAGE
         );
@@ -442,7 +466,7 @@ public class FunctionPanel extends JPanel {
         String icon = paymentMethod.contains("QR") ? "📱" : "💵";
         String message = "YÊU CẦU NẠP TIỀN TỪ KHÁCH:\n\n" +
                         icon + " Phương thức: " + paymentMethod + "\n" +
-                        "💰 Số tiền: " + String.format("%,d VND", amount) + "\n\n" +
+                        "Số tiền: " + String.format("%,d VND", amount) + "\n\n" +
                         "Xác nhận đã nhận tiền?";
         
         int result = JOptionPane.showConfirmDialog(
@@ -494,11 +518,7 @@ public class FunctionPanel extends JPanel {
             
             // Confirm deletion
             String confirmMsg = "XÓA THẺ NGƯỜI DÙNG?\n\n" +
-                              "👤 " + (card.fullName != null ? card.fullName : "N/A") + "\n" +
-                              "🎂 " + card.getDobString() + "\n" +
-                              "🎫 ID: " + card.userId + "\n" +
-                              "💰 Số Dư: " + card.balance + " VND\n" +
-                              "📅 Hạn Tập: " + card.expiryDays + " ngày\n\n" +
+                              formatCardInfo(card) + "\n" +
                               "Hành động này KHÔNG THỂ HOÀN TÁC!";
             
             int confirm = JOptionPane.showConfirmDialog(
@@ -531,8 +551,8 @@ public class FunctionPanel extends JPanel {
             
             if ((writeResp.getSW() & 0xFF00) == 0x9000) {
                 logArea.append("[THÀNH CÔNG] Đã xóa thẻ:\n");
-                logArea.append("  👤 " + (card.fullName != null ? card.fullName : "N/A") + "\n");
-                logArea.append("  🎫 ID: " + card.userId + "\n");
+                logArea.append(" Họ Tên: " + (card.fullName != null ? card.fullName : "N/A") + "\n");
+                logArea.append(" ID: " + card.userId + "\n");
                 logArea.append("Thẻ đã được reset về mặc định\n");
                 JOptionPane.showMessageDialog(this, 
                     "Xóa thẻ thành công!\nThẻ đã được reset.",
