@@ -43,6 +43,10 @@ public class SmartCard extends Applet {
     private static final byte INS_GET_PUBLIC_KEY = (byte) 0x82;
     private static final byte INS_SIGN_CHALLENGE = (byte) 0x88;
     
+    // Admin Instructions (no PIN required)
+    private static final byte INS_ADMIN_UNLOCK = (byte) 0xAA;  // Reset retry counter
+    private static final byte INS_ADMIN_RESET_PIN = (byte) 0xAB;  // Reset PIN without old PIN
+    
     // Persistent storage
     private byte[] cardData;
     
@@ -128,6 +132,12 @@ public class SmartCard extends Applet {
                 break;
             case INS_SIGN_CHALLENGE:
                 handleSignChallenge(apdu);
+                break;
+            case INS_ADMIN_UNLOCK:
+                handleAdminUnlock(apdu);
+                break;
+            case INS_ADMIN_RESET_PIN:
+                handleAdminResetPin(apdu);
                 break;
             default:
                 ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -287,5 +297,50 @@ public class SmartCard extends Applet {
         
         rsaSignature.sign(buf, ISO7816.OFFSET_CDATA, lc, buf, (short) 0);
         apdu.setOutgoingAndSend((short) 0, (short) 128);
+    }
+    
+    /**
+     * Admin unlock - Reset retry counter without PIN verification
+     * Command: 00 AA 00 00
+     * Response: 90 00 (success)
+     */
+    private void handleAdminUnlock(APDU apdu) {
+        // Admin privilege: reset retry counter without authentication
+        cardData[OFFSET_PIN_RETRY] = MAX_PIN_RETRY;
+        // Note: pinVerified stays false - this is just unlock, not authentication
+    }
+    
+    /**
+     * Admin reset PIN - Change PIN without knowing old PIN
+     * Command: 00 AB 00 00 06 [6-byte new PIN]
+     * Response: 90 00 (success)
+     * 
+     * WARNING: Balance/Expiry will be re-encrypted with NEW PIN.
+     * Old encrypted data will become unreadable.
+     */
+    private void handleAdminResetPin(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        short lc = apdu.setIncomingAndReceive();
+        
+        if (lc != 6) {
+            ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+        }
+        
+        // New PIN at buf[5-10]
+        short newPinOffset = ISO7816.OFFSET_CDATA;
+        
+        // Decrypt balance/expiry with CURRENT PIN (if possible)
+        // Since we don't have current PIN, we'll lose encrypted data
+        // This is acceptable for admin reset - user must re-enter balance/expiry
+        
+        // Update PIN hash with NEW PIN
+        hashPIN(buf, newPinOffset, (short) 6, tempBuffer, (short) 0);
+        Util.arrayCopyNonAtomic(tempBuffer, (short) 0, cardData, OFFSET_PIN_HASH, PIN_HASH_SIZE);
+        
+        // Reset retry counter
+        cardData[OFFSET_PIN_RETRY] = MAX_PIN_RETRY;
+        
+        // Note: Existing balance/expiry encryption is now invalid
+        // PC must re-write balance/expiry after this operation
     }
 }

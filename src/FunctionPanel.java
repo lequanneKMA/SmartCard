@@ -110,6 +110,18 @@ public class FunctionPanel extends JPanel {
         JButton deleteBtn = createModernButton("Xóa Thẻ", new Color(244, 67, 54));
         deleteBtn.addActionListener(e -> deleteCard());
         controlPanel.add(deleteBtn);
+        
+        JButton unlockBtn = createModernButton("🔓 Mở Khóa", new Color(255, 193, 7));
+        unlockBtn.addActionListener(e -> unlockCard());
+        controlPanel.add(unlockBtn);
+        
+        JButton resetPinBtn = createModernButton("🔐 Reset PIN", new Color(156, 39, 176));
+        resetPinBtn.addActionListener(e -> resetPin());
+        controlPanel.add(resetPinBtn);
+        
+        JButton editInfoBtn = createModernButton("Sửa Thông Tin", new Color(33, 150, 243));
+        editInfoBtn.addActionListener(e -> editCardInfo());
+        controlPanel.add(editInfoBtn);
 
         controlPanel.revalidate();
         controlPanel.repaint();
@@ -169,6 +181,14 @@ public class FunctionPanel extends JPanel {
                 } else {
                     logArea.append("💰 Số Dư: " + String.format("%,d VND", currentCard.balance) + "\n");
                     logArea.append("📅 Hạn Tập: " + currentCard.expiryDays + " ngày\n");
+                }
+                
+                // Admin info
+                if (currentRole.equals("ADMIN")) {
+                    logArea.append("\n⚙️ ADMIN INFO:\n");
+                    logArea.append("🔢 PIN Retry: " + currentCard.pinRetry + "/5\n");
+                    String status = currentCard.pinRetry == 0 ? "🔒 LOCKED" : "✅ ACTIVE";
+                    logArea.append("📊 Status: " + status + "\n");
                 }
 
             } catch (Exception ex) {
@@ -392,15 +412,15 @@ public class FunctionPanel extends JPanel {
         logArea.append(formatCardInfo(card));
         
         if (currentRole.equals("ADMIN")) {
-            logArea.append("\n⚠️ ADMIN INFO:\n");
+            logArea.append("\nTrạng thái thẻ:\n");
             logArea.append("Retry Counter: " + card.pinRetry + "/5\n");
-            logArea.append("Status: " + (card.isLocked() ? "🔒 LOCKED" : "✓ Active") + "\n");
+            logArea.append("Trạng thái: " + (card.isLocked() ? "Đã khóa" : "Hoạt động") + "\n");
         }
         
         if (card.expiryDays <= 0) {
-            logArea.append("\n❌ THẺ HẾT HẠN!\n");
+            logArea.append("\n THẺ HẾT HẠN!\n");
         } else if (card.expiryDays <= 7) {
-            logArea.append("\n⚠️ THẺ SẮP HẾT HẠN!\n");
+            logArea.append("\n THẺ SẮP HẾT HẠN!\n");
         }
     }
     
@@ -560,6 +580,340 @@ public class FunctionPanel extends JPanel {
                     JOptionPane.INFORMATION_MESSAGE);
             } else {
                 logArea.append("[LỖI] Xóa thẻ thất bại (SW: " + 
+                             Integer.toHexString(writeResp.getSW()).toUpperCase() + ")\n");
+            }
+            
+        } catch (Exception ex) {
+            logArea.append("[LỖI] " + ex.getMessage() + "\n");
+        }
+    }
+    
+    /**
+     * Unlock card - Admin only (reset retry counter without changing PIN)
+     */
+    private void unlockCard() {
+        if (currentCard == null || currentCard.userId == 0) {
+            JOptionPane.showMessageDialog(this, "❌ Vui lòng quẹt thẻ trước!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        logArea.setText("");
+        logArea.append("[ADMIN] Mở khóa thẻ #" + currentCard.userId + "\n\n");
+        
+        if (currentCard.pinRetry >= 5) {
+            JOptionPane.showMessageDialog(this, "ℹ️ Thẻ chưa bị khóa (Retry: " + currentCard.pinRetry + "/5)", 
+                "Thông Báo", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        // Ask for user's PIN (to verify before unlocking)
+        String userPin = JOptionPane.showInputDialog(this,
+            "⚠️ Cần PIN của user để xác thực\n\n" +
+            "Nhập PIN của thẻ (6 chữ số):",
+            "🔐 Xác Thực PIN",
+            JOptionPane.QUESTION_MESSAGE);
+        
+        if (userPin == null) {
+            logArea.append("[HỦY] Không mở khóa\n");
+            return;
+        }
+        
+        if (!userPin.matches("\\d{6}")) {
+            JOptionPane.showMessageDialog(this, "❌ PIN phải là 6 chữ số!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        try {
+            pcsc.connectFirstPresentOrFirst();
+            
+            // Select applet
+            javax.smartcardio.CommandAPDU selectCmd = new javax.smartcardio.CommandAPDU(0x00, 0xA4, 0x04, 0x00,
+                    new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x03,(byte)0x00});
+            javax.smartcardio.ResponseAPDU selectResp = pcsc.transmit(selectCmd);
+            if ((selectResp.getSW() & 0xFF00) != 0x9000) {
+                logArea.append("[LỖI] Không thể select applet\n");
+                return;
+            }
+            
+            // VERIFY PIN first to authenticate
+            logArea.append("[BƯỚC 1] Xác thực PIN...\n");
+            javax.smartcardio.CommandAPDU verifyCmd = CardHelper.buildVerifyPinCommand(userPin);
+            javax.smartcardio.ResponseAPDU verifyResp = pcsc.transmit(verifyCmd);
+            
+            if ((verifyResp.getSW() & 0xFF00) != 0x9000) {
+                int retriesLeft = verifyResp.getSW() & 0x000F;
+                logArea.append("[LỖI] PIN không đúng! Còn " + retriesLeft + " lần thử\n");
+                JOptionPane.showMessageDialog(this, 
+                    "❌ PIN không đúng!\n\nCòn " + retriesLeft + " lần thử",
+                    "Lỗi",
+                    JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            logArea.append("[OK] PIN đúng, đã xác thực!\n");
+            
+            // Now read and parse card data (will get decrypted data from VERIFY_PIN response)
+            CardData card = CardHelper.parseVerifyPinResponse(verifyResp, userPin);
+            
+            // Reset retry counter
+            card.pinRetry = 5;
+            
+            // Write back (now pinVerified = true, so write will succeed)
+            logArea.append("[BƯỚC 2] Reset retry counter...\n");
+            javax.smartcardio.CommandAPDU writeCmd = CardHelper.buildWriteCommand(card);
+            javax.smartcardio.ResponseAPDU writeResp = pcsc.transmit(writeCmd);
+            
+            if ((writeResp.getSW() & 0xFF00) == 0x9000) {
+                logArea.append("[✅ THÀNH CÔNG] Đã mở khóa thẻ!\n");
+                logArea.append("Retry counter: 5/5\n");
+                
+                JOptionPane.showMessageDialog(this, 
+                    "✅ Mở khóa thành công!\n\n" +
+                    "Retry counter đã reset về 5/5",
+                    "Thành Công",
+                    JOptionPane.INFORMATION_MESSAGE);
+                    
+                currentCard.pinRetry = 5;
+            } else {
+                logArea.append("[LỖI] Mở khóa thất bại (SW: " + 
+                             Integer.toHexString(writeResp.getSW()).toUpperCase() + ")\n");
+            }
+            
+        } catch (Exception ex) {
+            logArea.append("[LỖI] " + ex.getMessage() + "\n");
+            ex.printStackTrace();
+        }
+    }
+    
+    /**
+     * Reset PIN - Admin only (requires old PIN to re-encrypt balance/expiry)
+     */
+    private void resetPin() {
+        if (currentCard == null || currentCard.userId == 0) {
+            JOptionPane.showMessageDialog(this, "❌ Vui lòng quẹt thẻ trước!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        logArea.setText("");
+        logArea.append("[ADMIN] Reset PIN cho thẻ #" + currentCard.userId + "\n\n");
+        
+        // Ask for OLD PIN first (needed to decrypt balance/expiry)
+        String oldPin = JOptionPane.showInputDialog(this, 
+            "⚠️ Cần PIN cũ để decrypt balance/expiry\n\n" +
+            "Nhập PIN cũ (6 chữ số):",
+            "🔐 PIN Cũ",
+            JOptionPane.QUESTION_MESSAGE);
+        
+        if (oldPin == null) {
+            logArea.append("[HỦY] Không reset PIN\n");
+            return;
+        }
+        
+        if (!oldPin.matches("\\d{6}")) {
+            JOptionPane.showMessageDialog(this, "❌ PIN phải là 6 chữ số!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        // Ask for NEW PIN
+        String newPin = JOptionPane.showInputDialog(this, 
+            "Reset PIN cho: " + currentCard.fullName + "\n\n" +
+            "Nhập PIN mới (6 chữ số):",
+            "🔐 PIN Mới",
+            JOptionPane.QUESTION_MESSAGE);
+        
+        if (newPin == null) {
+            logArea.append("[HỦY] Không reset PIN\n");
+            return;
+        }
+        
+        if (!newPin.matches("\\d{6}")) {
+            JOptionPane.showMessageDialog(this, "❌ PIN phải là 6 chữ số!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        try {
+            pcsc.connectFirstPresentOrFirst();
+            
+            // Select applet
+            javax.smartcardio.CommandAPDU selectCmd = new javax.smartcardio.CommandAPDU(0x00, 0xA4, 0x04, 0x00,
+                    new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x03,(byte)0x00});
+            javax.smartcardio.ResponseAPDU selectResp = pcsc.transmit(selectCmd);
+            if ((selectResp.getSW() & 0xFF00) != 0x9000) {
+                logArea.append("[LỖI] Không thể select applet\n");
+                return;
+            }
+            
+            // Read with OLD PIN to get decrypted data
+            javax.smartcardio.CommandAPDU readCmd = CardHelper.buildReadCommand();
+            javax.smartcardio.ResponseAPDU readResp = pcsc.transmit(readCmd);
+            if ((readResp.getSW() & 0xFF00) != 0x9000) {
+                logArea.append("[LỖI] Đọc thẻ thất bại\n");
+                return;
+            }
+            
+            // Parse with old PIN to decrypt balance/expiry
+            CardData card;
+            try {
+                card = CardHelper.parseReadResponse(readResp.getData(), oldPin);
+                logArea.append("[OK] Decrypt thành công với PIN cũ\n");
+            } catch (Exception e) {
+                logArea.append("[LỖI] PIN cũ không đúng!\n");
+                JOptionPane.showMessageDialog(this, "❌ PIN cũ không đúng!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            // Update PIN and reset retry counter
+            card.pin = newPin;
+            card.pinRetry = 5;
+            
+            // Write back with NEW PIN (will re-encrypt balance/expiry)
+            javax.smartcardio.CommandAPDU writeCmd = CardHelper.buildWriteCommand(card);
+            javax.smartcardio.ResponseAPDU writeResp = pcsc.transmit(writeCmd);
+            
+            if ((writeResp.getSW() & 0xFF00) == 0x9000) {
+                logArea.append("[✅ THÀNH CÔNG] Đã reset PIN!\n");
+                logArea.append("PIN mới: " + newPin + "\n");
+                logArea.append("Retry counter: 5/5\n");
+                logArea.append("Balance/Expiry đã được re-encrypt với PIN mới\n");
+                
+                JOptionPane.showMessageDialog(this, 
+                    "✅ Reset PIN thành công!\n\n" +
+                    "PIN mới: " + newPin + "\n" +
+                    "Retry counter đã reset về 5/5",
+                    "Thành Công",
+                    JOptionPane.INFORMATION_MESSAGE);
+                    
+                currentCard.pin = newPin;
+                currentCard.pinRetry = 5;
+            } else {
+                logArea.append("[LỖI] Reset PIN thất bại (SW: " + 
+                             Integer.toHexString(writeResp.getSW()).toUpperCase() + ")\n");
+            }
+            
+        } catch (Exception ex) {
+            logArea.append("[LỖI] " + ex.getMessage() + "\n");
+            ex.printStackTrace();
+        }
+    }
+    
+    /**
+     * Edit card info (Name, DOB) - Admin only
+     */
+    private void editCardInfo() {
+        if (currentCard == null || currentCard.userId == 0) {
+            JOptionPane.showMessageDialog(this, "❌ Vui lòng quẹt thẻ trước!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        logArea.setText("");
+        logArea.append("[ADMIN] Chỉnh sửa thông tin thẻ #" + currentCard.userId + "\n\n");
+        
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        
+        // Name field
+        JTextField nameField = new JTextField(currentCard.fullName, 20);
+        gbc.gridx = 0; gbc.gridy = 0;
+        panel.add(new JLabel("Họ Tên:"), gbc);
+        gbc.gridx = 1;
+        panel.add(nameField, gbc);
+        
+        // DOB fields
+        gbc.gridx = 0; gbc.gridy = 1;
+        panel.add(new JLabel("Ngày Sinh:"), gbc);
+        JPanel datePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        JSpinner daySpinner = new JSpinner(new SpinnerNumberModel((int)currentCard.dobDay, 1, 31, 1));
+        JSpinner monthSpinner = new JSpinner(new SpinnerNumberModel((int)currentCard.dobMonth, 1, 12, 1));
+        JSpinner yearSpinner = new JSpinner(new SpinnerNumberModel((int)currentCard.dobYear, 1900, 2025, 1));
+        daySpinner.setPreferredSize(new Dimension(50, 25));
+        monthSpinner.setPreferredSize(new Dimension(50, 25));
+        yearSpinner.setPreferredSize(new Dimension(70, 25));
+        datePanel.add(new JLabel("Ngày:"));
+        datePanel.add(daySpinner);
+        datePanel.add(new JLabel("Tháng:"));
+        datePanel.add(monthSpinner);
+        datePanel.add(new JLabel("Năm:"));
+        datePanel.add(yearSpinner);
+        gbc.gridx = 1;
+        panel.add(datePanel, gbc);
+        
+        int option = JOptionPane.showConfirmDialog(this, panel, 
+            "✏️ Chỉnh Sửa Thông Tin", JOptionPane.OK_CANCEL_OPTION);
+        if (option != JOptionPane.OK_OPTION) {
+            logArea.append("[HỦY] Không chỉnh sửa\n");
+            return;
+        }
+        
+        String newName = nameField.getText().trim();
+        if (newName.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "❌ Họ tên không được để trống!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        try {
+            pcsc.connectFirstPresentOrFirst();
+            
+            // Select applet
+            javax.smartcardio.CommandAPDU selectCmd = new javax.smartcardio.CommandAPDU(0x00, 0xA4, 0x04, 0x00,
+                    new byte[]{(byte)0x26,(byte)0x12,(byte)0x20,(byte)0x03,(byte)0x03,(byte)0x00});
+            javax.smartcardio.ResponseAPDU selectResp = pcsc.transmit(selectCmd);
+            if ((selectResp.getSW() & 0xFF00) != 0x9000) {
+                logArea.append("[LỖI] Không thể select applet\n");
+                return;
+            }
+            
+            // Read current data
+            javax.smartcardio.CommandAPDU readCmd = CardHelper.buildReadCommand();
+            javax.smartcardio.ResponseAPDU readResp = pcsc.transmit(readCmd);
+            if ((readResp.getSW() & 0xFF00) != 0x9000) {
+                logArea.append("[LỖI] Đọc thẻ thất bại\n");
+                return;
+            }
+            
+            CardData card = CardHelper.parseReadResponse(readResp.getData());
+            
+            // Update info
+            card.fullName = newName;
+            card.dobDay = (byte) ((Integer) daySpinner.getValue()).intValue();
+            card.dobMonth = (byte) ((Integer) monthSpinner.getValue()).intValue();
+            card.dobYear = (short) ((Integer) yearSpinner.getValue()).intValue();
+            
+            // Need PIN to write - use default or ask
+            if (card.pin == null || card.pin.isEmpty()) {
+                String pin = JOptionPane.showInputDialog(this, 
+                    "⚠️ Cần PIN để ghi dữ liệu\n\n" +
+                    "Nhập PIN của thẻ (6 chữ số):",
+                    "Yêu Cầu PIN",
+                    JOptionPane.QUESTION_MESSAGE);
+                if (pin == null || !pin.matches("\\d{6}")) {
+                    logArea.append("[HỦY] Không có PIN hợp lệ\n");
+                    return;
+                }
+                card.pin = pin;
+            }
+            
+            // Write back
+            javax.smartcardio.CommandAPDU writeCmd = CardHelper.buildWriteCommand(card);
+            javax.smartcardio.ResponseAPDU writeResp = pcsc.transmit(writeCmd);
+            
+            if ((writeResp.getSW() & 0xFF00) == 0x9000) {
+                logArea.append("[✅ THÀNH CÔNG] Đã cập nhật thông tin!\n");
+                logArea.append("Họ tên mới: " + card.fullName + "\n");
+                logArea.append("Ngày sinh mới: " + card.getDobString() + "\n");
+                
+                JOptionPane.showMessageDialog(this, 
+                    "✅ Cập nhật thành công!\n\n" +
+                    "Họ tên: " + card.fullName + "\n" +
+                    "Ngày sinh: " + card.getDobString(),
+                    "Thành Công",
+                    JOptionPane.INFORMATION_MESSAGE);
+                    
+                currentCard = card;
+            } else {
+                logArea.append("[LỖI] Cập nhật thất bại (SW: " + 
                              Integer.toHexString(writeResp.getSW()).toUpperCase() + ")\n");
             }
             

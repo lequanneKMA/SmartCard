@@ -25,6 +25,8 @@ public class CardHelper {
     public static final byte INS_CHANGE_PIN = (byte) 0x24;
     public static final byte INS_GET_PUBLIC_KEY = (byte) 0x82;
     public static final byte INS_SIGN_CHALLENGE = (byte) 0x88;
+    public static final byte INS_ADMIN_UNLOCK = (byte) 0xAA;
+    public static final byte INS_ADMIN_RESET_PIN = (byte) 0xAB;
 
     /**
      * Build: 00 B0 00 00 40 (read 64 bytes)
@@ -93,6 +95,27 @@ public class CardHelper {
     }
     
     /**
+     * Build: 00 AA 00 00 - Admin unlock (reset retry counter)
+     * No PIN verification required - admin privilege
+     */
+    public static CommandAPDU buildAdminUnlockCommand() {
+        return new CommandAPDU(0x00, INS_ADMIN_UNLOCK, 0x00, 0x00);
+    }
+    
+    /**
+     * Build: 00 AB 00 00 06 [new PIN 6B] - Admin reset PIN
+     * Change PIN without requiring old PIN - admin privilege
+     * WARNING: Changes AES key, invalidating encrypted balance/expiry
+     */
+    public static CommandAPDU buildAdminResetPinCommand(String newPin) {
+        byte[] pinData = newPin.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        if (pinData.length != 6) {
+            throw new IllegalArgumentException("PIN must be exactly 6 digits");
+        }
+        return new CommandAPDU(0x00, INS_ADMIN_RESET_PIN, 0x00, 0x00, pinData);
+    }
+    
+    /**
      * Build: 00 82 00 00 83 - Get RSA public key
      * Response: [Modulus 128 bytes][Exponent 3 bytes] = 131 bytes
      */
@@ -136,7 +159,7 @@ public class CardHelper {
         // [18-33] PIN hash - skip (admin doesn't see this)
         
         // [34] PIN retry counter (unencrypted)
-        int retryCount = data[34] & 0xFF;
+        card.pinRetry = data[34];
         
         // [35-38] DOB (unencrypted)
         card.dobDay = (byte) (data[35] & 0xFF);
